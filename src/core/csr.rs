@@ -73,6 +73,55 @@ impl<'a, I: Index, V> CsrView<'a, I, V> {
     }
 }
 
+pub struct CsrViewMut<'a, I: Index, V> {
+    pub row_ptrs: &'a [I],
+    pub col_indices: &'a [I],
+    pub values: &'a mut [V],
+    pub shape: (usize, usize),
+}
+impl<'a, I: Index, V> CsrViewMut<'a, I, V> {
+    #[inline(always)]
+    pub fn new(
+        shape: (usize, usize),
+        row_ptrs: &'a [I],
+        col_indices: &'a [I],
+        values: &'a mut [V],
+    ) -> Self {
+        Self {
+            shape,
+            row_ptrs,
+            col_indices,
+            values,
+        }
+    }
+
+    #[inline(always)]
+    pub fn shape(&self) -> (usize, usize) {
+        self.shape
+    }
+}
+impl<'a, I: Index, V: Send + Sync> CsrViewMut<'a, I, V> {
+    #[inline(always)]
+    pub fn split_into_rows_mut(self) -> Vec<(usize, &'a [I], &'a mut [V])> {
+        let mut rows = Vec::with_capacity(self.shape.0);
+        let mut remainings = self.values;
+
+        for i in 0..self.shape.0 {
+            let start = self.row_ptrs[i].to_usize();
+            let end = self.row_ptrs[i + 1].to_usize();
+            let len = end - start;
+
+            // cut from remaining_values and reassign
+            let (current_row, next_remaining) = remainings.split_at_mut(len);
+            remainings = next_remaining;
+
+            let col_indices = &self.col_indices[start..end];
+            rows.push((i, col_indices, current_row));
+        }
+        rows
+    }
+}
+
 pub trait SparseMatrix<I: Index, V> {
     fn shape(&self) -> (usize, usize);
     fn nnz(&self) -> usize;
