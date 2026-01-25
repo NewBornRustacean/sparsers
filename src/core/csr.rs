@@ -41,6 +41,38 @@ pub struct CsrView<'a, I: Index, V> {
     pub shape: (usize, usize),
 }
 
+impl<'a, I: Index, V> CsrView<'a, I, V> {
+    #[inline(always)]
+    pub fn new(
+        shape: (usize, usize),
+        row_ptrs: &'a [I],
+        col_indices: &'a [I],
+        values: &'a [V],
+    ) -> Self {
+        Self {
+            shape,
+            row_ptrs,
+            col_indices,
+            values,
+        }
+    }
+
+    #[inline(always)]
+    pub fn shape(&self) -> (usize, usize) {
+        self.shape
+    }
+
+    #[inline(always)]
+    pub fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
+        if idx >= self.shape.0 {
+            return None;
+        }
+        let start = self.row_ptrs[idx].to_usize();
+        let end = self.row_ptrs[idx + 1].to_usize();
+        Some((&self.col_indices[start..end], &self.values[start..end]))
+    }
+}
+
 pub trait SparseMatrix<I: Index, V> {
     fn shape(&self) -> (usize, usize);
     fn nnz(&self) -> usize;
