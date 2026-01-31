@@ -1,37 +1,32 @@
-pub trait Index: Copy + Send + Sync + 'static {
-    fn to_usize(self) -> usize;
-    fn from_usize(value: usize) -> Self;
-}
-
-impl Index for u32 {
-    #[inline(always)]
-    fn to_usize(self) -> usize {
-        self as usize
-    }
-
-    #[inline(always)]
-    fn from_usize(value: usize) -> Self {
-        value as u32
-    }
-}
-
-impl Index for u64 {
-    #[inline(always)]
-    fn to_usize(self) -> usize {
-        self as usize
-    }
-
-    #[inline(always)]
-    fn from_usize(value: usize) -> Self {
-        value as u64
-    }
-}
+use crate::core::common::{Index, MutableSparseMatrix, SparseMatrix};
 
 pub struct CsrContainer<I: Index, V> {
     pub row_ptrs: Vec<I>,
     pub col_indices: Vec<I>,
     pub values: Vec<V>,
     pub shape: (usize, usize),
+}
+
+impl<I: Index, V> SparseMatrix<I, V> for CsrContainer<I, V> {
+    #[inline(always)]
+    fn shape(&self) -> (usize, usize) {
+        self.shape
+    }
+
+    #[inline(always)]
+    fn nnz(&self) -> usize {
+        self.values.len()
+    }
+
+    #[inline(always)]
+    fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
+        if idx >= self.shape.0 {
+            return None;
+        }
+        let start = self.row_ptrs[idx].to_usize();
+        let end = self.row_ptrs[idx + 1].to_usize();
+        Some((&self.col_indices[start..end], &self.values[start..end]))
+    }
 }
 
 pub struct CsrView<'a, I: Index, V> {
@@ -73,12 +68,35 @@ impl<'a, I: Index, V> CsrView<'a, I, V> {
     }
 }
 
+impl<'a, I: Index, V> SparseMatrix<I, V> for CsrView<'a, I, V> {
+    #[inline(always)]
+    fn shape(&self) -> (usize, usize) {
+        self.shape
+    }
+
+    #[inline(always)]
+    fn nnz(&self) -> usize {
+        self.values.len()
+    }
+
+    #[inline(always)]
+    fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
+        if idx >= self.shape.0 {
+            return None;
+        }
+        let start = self.row_ptrs[idx].to_usize();
+        let end = self.row_ptrs[idx + 1].to_usize();
+        Some((&self.col_indices[start..end], &self.values[start..end]))
+    }
+}
+
 pub struct CsrViewMut<'a, I: Index, V> {
     pub row_ptrs: &'a [I],
     pub col_indices: &'a [I],
     pub values: &'a mut [V],
     pub shape: (usize, usize),
 }
+
 impl<'a, I: Index, V> CsrViewMut<'a, I, V> {
     #[inline(always)]
     pub fn new(
@@ -100,9 +118,31 @@ impl<'a, I: Index, V> CsrViewMut<'a, I, V> {
         self.shape
     }
 }
-impl<'a, I: Index, V: Send + Sync> CsrViewMut<'a, I, V> {
+
+impl<I: Index, V> SparseMatrix<I, V> for CsrViewMut<'_, I, V> {
     #[inline(always)]
-    pub fn split_into_rows_mut(self) -> Vec<(usize, &'a [I], &'a mut [V])> {
+    fn shape(&self) -> (usize, usize) {
+        self.shape
+    }
+
+    #[inline(always)]
+    fn nnz(&self) -> usize {
+        self.values.len()
+    }
+
+    #[inline(always)]
+    fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
+        if idx >= self.shape.0 {
+            return None;
+        }
+        let start = self.row_ptrs[idx].to_usize();
+        let end = self.row_ptrs[idx + 1].to_usize();
+        Some((&self.col_indices[start..end], &self.values[start..end]))
+    }
+}
+
+impl<'a, I: Index, V: Send + Sync> MutableSparseMatrix<'a, I, V> for CsrViewMut<'a, I, V> {
+    fn split_into_rows_mut(self) -> Vec<(usize, &'a [I], &'a mut [V])> {
         let mut rows = Vec::with_capacity(self.shape.0);
         let mut remainings = self.values;
 
@@ -119,61 +159,6 @@ impl<'a, I: Index, V: Send + Sync> CsrViewMut<'a, I, V> {
             rows.push((i, col_indices, current_row));
         }
         rows
-    }
-}
-
-pub trait SparseMatrix<I: Index, V> {
-    fn shape(&self) -> (usize, usize);
-    fn nnz(&self) -> usize;
-
-    // return a specific row as a slice
-    fn row(&self, idx: usize) -> Option<(&[I], &[V])>;
-    fn rows(&self) -> usize {
-        self.shape().0
-    }
-}
-
-impl<I: Index, V> SparseMatrix<I, V> for CsrContainer<I, V> {
-    #[inline(always)]
-    fn shape(&self) -> (usize, usize) {
-        self.shape
-    }
-
-    #[inline(always)]
-    fn nnz(&self) -> usize {
-        self.values.len()
-    }
-
-    #[inline(always)]
-    fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
-        if idx >= self.shape.0 {
-            return None;
-        }
-        let start = self.row_ptrs[idx].to_usize();
-        let end = self.row_ptrs[idx + 1].to_usize();
-        Some((&self.col_indices[start..end], &self.values[start..end]))
-    }
-}
-
-impl<'a, I: Index, V> SparseMatrix<I, V> for CsrView<'a, I, V> {
-    #[inline(always)]
-    fn shape(&self) -> (usize, usize) {
-        self.shape
-    }
-
-    #[inline(always)]
-    fn nnz(&self) -> usize {
-        self.values.len()
-    }
-
-    #[inline(always)]
-    fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
-        if idx >= self.shape.0 {
-            return None;
-        }
-        let start = self.row_ptrs[idx].to_usize();
-        let end = self.row_ptrs[idx + 1].to_usize();
-        Some((&self.col_indices[start..end], &self.values[start..end]))
     }
 }
 

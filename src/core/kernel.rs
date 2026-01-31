@@ -1,9 +1,9 @@
 use rayon::prelude::*;
 
-use crate::csr::{CsrView, CsrViewMut, Index};
-
-pub trait Scalar: num_traits::Num + num_traits::NumAssign + Copy + Send + Sync + 'static {}
-impl<T> Scalar for T where T: num_traits::Num + num_traits::NumAssign + Copy + Send + Sync + 'static {}
+use crate::{
+    core::common::{Index, MutableSparseMatrix, Scalar, SparseMatrix},
+    csr::{CsrView, CsrViewMut},
+};
 
 /// Sparse Matrix-Matrix Multiplication (SpMM) where the second matrix is dense.
 ///
@@ -16,8 +16,14 @@ impl<T> Scalar for T where T: num_traits::Num + num_traits::NumAssign + Copy + S
 /// # Panics
 /// Panics if the dimensions of the matrices do not align for multiplication or if the output buffer
 /// size does not match the expected size.
-pub fn spmm_dense<I: Index, V: Scalar>(a: &CsrView<I, V>, b: &[V], c: &mut [V], b_cols: usize) {
+pub fn spmm_dense<M, I, V>(a: &M, b: &[V], c: &mut [V], b_cols: usize)
+where
+    M: SparseMatrix<I, V> + Sync,
+    I: Index,
+    V: Scalar,
+{
     let (a_rows, a_cols) = a.shape();
+
     assert_eq!(c.len(), a_rows * b_cols, "Output buffer size mismatch");
     assert!(b.len() >= a_cols * b_cols, "Dense matrix B is too small");
 
@@ -27,8 +33,10 @@ pub fn spmm_dense<I: Index, V: Scalar>(a: &CsrView<I, V>, b: &[V], c: &mut [V], 
         if let Some((a_col_indices, a_values)) = a.row(i) {
             for (&col_index, &val) in a_col_indices.iter().zip(a_values.iter()) {
                 let b_row_start = col_index.to_usize() * b_cols;
-                let b_row = &b[b_row_start..b_row_start + b_cols];
+                let b_row_end = b_row_start + b_cols;
+                let b_row = &b[b_row_start..b_row_end];
 
+                // Inner Loop: Dense-Vector Accumulation
                 for (c_out, &b_val) in c_row.iter_mut().zip(b_row.iter()) {
                     *c_out += val * b_val;
                 }
@@ -51,7 +59,12 @@ pub fn spmm_dense<I: Index, V: Scalar>(a: &CsrView<I, V>, b: &[V], c: &mut [V], 
 ///
 /// # Panics
 /// Panics if the dimensions of `d1` or `d2` do not match the shape of `s` and `k`.
-pub fn sddmm<I: Index, V: Scalar>(s: CsrViewMut<I, V>, d1: &[V], d2: &[V], k: usize) {
+pub fn sddmm<'a, M, I, V>(s: M, d1: &[V], d2: &[V], k: usize)
+where
+    M: MutableSparseMatrix<'a, I, V> + Sync,
+    I: Index,
+    V: Scalar,
+{
     let rows = s.split_into_rows_mut();
 
     rows.into_par_iter().for_each(|(i, col_indices, row_values)| {
