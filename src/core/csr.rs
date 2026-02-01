@@ -1,4 +1,10 @@
-use crate::core::common::{Index, MutableSparseMatrix, SparseMatrix};
+use ndarray::{Array2, Axis, Zip, parallel::prelude::*};
+use rayon::prelude::*;
+
+use crate::core::{
+    common::{Index, MutableSparseMatrix, Scalar, SparseMatrix},
+    coo::CooContainer,
+};
 
 pub struct CsrContainer<I: Index, V> {
     pub row_ptrs: Vec<I>,
@@ -7,7 +13,89 @@ pub struct CsrContainer<I: Index, V> {
     pub shape: (usize, usize),
 }
 
-impl<I: Index, V> SparseMatrix<I, V> for CsrContainer<I, V> {
+impl<I: Index, V: Scalar> CsrContainer<I, V> {
+    #[inline(always)]
+    pub fn new(
+        shape: (usize, usize),
+        row_ptrs: Vec<I>,
+        col_indices: Vec<I>,
+        values: Vec<V>,
+    ) -> Self {
+        Self {
+            shape,
+            row_ptrs,
+            col_indices,
+            values,
+        }
+    }
+
+    pub fn from_coo(coo: &CooContainer<I, V>) -> CsrContainer<I, V> {
+        let (rows, cols) = coo.shape;
+        let nnz = coo.values.len();
+
+        let mut entries: Vec<(I, I, V)> = (0..nnz)
+            .into_par_iter()
+            .map(|idx| {
+                (
+                    coo.row_indices[idx],
+                    coo.col_indices[idx],
+                    coo.values[idx].clone(),
+                )
+            })
+            .collect();
+
+        entries.par_sort_unstable_by_key(|e| e.0.to_usize());
+
+        let mut row_ptrs = vec![I::from_usize(0); rows + 1];
+        for &(r, _, _) in &entries {
+            let r_idx = r.to_usize();
+            row_ptrs[r_idx + 1] = I::from_usize(row_ptrs[r_idx + 1].to_usize() + 1);
+        }
+
+        for i in 0..rows {
+            let prev = row_ptrs[i].to_usize();
+            let curr = row_ptrs[i + 1].to_usize();
+            row_ptrs[i + 1] = I::from_usize(prev + curr);
+        }
+
+        let (col_indices, values): (Vec<I>, Vec<V>) =
+            entries.into_par_iter().map(|(_, c, v)| (c, v)).unzip();
+
+        CsrContainer::new((rows, cols), row_ptrs, col_indices, values)
+    }
+
+    /// Create a CSR matrix from an ndarray 2D array
+    /// this function bypasses genrating an intermidiate COO matrix.
+    /// without extra conversion logics, it directly constructs CSR from ndarray
+    pub fn from_ndarray(array: &Array2<V>) -> Self {
+        let (rows, cols) = array.dim();
+        let zero = V::zero();
+
+        let mut row_ptrs = Vec::with_capacity(rows + 1);
+        let mut col_indices = Vec::new();
+        let mut values = Vec::new();
+
+        row_ptrs.push(I::from_usize(0));
+        for row_view in array.axis_iter(Axis(0)) {
+            Zip::indexed(row_view).for_each(|col_idx, &val| {
+                if val != zero {
+                    col_indices.push(I::from_usize(col_idx));
+                    values.push(val);
+                }
+            });
+            row_ptrs.push(I::from_usize(values.len()));
+        }
+
+        Self {
+            shape: (rows, cols),
+            row_ptrs,
+            col_indices,
+            values,
+        }
+    }
+}
+
+impl<I: Index, V: Scalar> SparseMatrix<I, V> for CsrContainer<I, V> {
     #[inline(always)]
     fn shape(&self) -> (usize, usize) {
         self.shape
@@ -29,14 +117,14 @@ impl<I: Index, V> SparseMatrix<I, V> for CsrContainer<I, V> {
     }
 }
 
-pub struct CsrView<'a, I: Index, V> {
+pub struct CsrView<'a, I: Index, V: Scalar> {
     pub row_ptrs: &'a [I],
     pub col_indices: &'a [I],
     pub values: &'a [V],
     pub shape: (usize, usize),
 }
 
-impl<'a, I: Index, V> CsrView<'a, I, V> {
+impl<'a, I: Index, V: Scalar> CsrView<'a, I, V> {
     #[inline(always)]
     pub fn new(
         shape: (usize, usize),
@@ -68,7 +156,7 @@ impl<'a, I: Index, V> CsrView<'a, I, V> {
     }
 }
 
-impl<'a, I: Index, V> SparseMatrix<I, V> for CsrView<'a, I, V> {
+impl<'a, I: Index, V: Scalar> SparseMatrix<I, V> for CsrView<'a, I, V> {
     #[inline(always)]
     fn shape(&self) -> (usize, usize) {
         self.shape
@@ -90,14 +178,14 @@ impl<'a, I: Index, V> SparseMatrix<I, V> for CsrView<'a, I, V> {
     }
 }
 
-pub struct CsrViewMut<'a, I: Index, V> {
+pub struct CsrViewMut<'a, I: Index, V: Scalar> {
     pub row_ptrs: &'a [I],
     pub col_indices: &'a [I],
     pub values: &'a mut [V],
     pub shape: (usize, usize),
 }
 
-impl<'a, I: Index, V> CsrViewMut<'a, I, V> {
+impl<'a, I: Index, V: Scalar> CsrViewMut<'a, I, V> {
     #[inline(always)]
     pub fn new(
         shape: (usize, usize),
@@ -119,7 +207,7 @@ impl<'a, I: Index, V> CsrViewMut<'a, I, V> {
     }
 }
 
-impl<I: Index, V> SparseMatrix<I, V> for CsrViewMut<'_, I, V> {
+impl<I: Index, V: Scalar> SparseMatrix<I, V> for CsrViewMut<'_, I, V> {
     #[inline(always)]
     fn shape(&self) -> (usize, usize) {
         self.shape
@@ -141,7 +229,7 @@ impl<I: Index, V> SparseMatrix<I, V> for CsrViewMut<'_, I, V> {
     }
 }
 
-impl<'a, I: Index, V: Send + Sync> MutableSparseMatrix<'a, I, V> for CsrViewMut<'a, I, V> {
+impl<'a, I: Index, V: Scalar> MutableSparseMatrix<'a, I, V> for CsrViewMut<'a, I, V> {
     fn split_into_rows_mut(self) -> Vec<(usize, &'a [I], &'a mut [V])> {
         let mut rows = Vec::with_capacity(self.shape.0);
         let mut remainings = self.values;
@@ -164,7 +252,33 @@ impl<'a, I: Index, V: Send + Sync> MutableSparseMatrix<'a, I, V> for CsrViewMut<
 
 #[cfg(test)]
 mod tests {
+    use ndarray::array;
+
     use super::*;
+
+    #[test]
+    fn test_build_csr_from_ndarray_pass() {
+        let sparse = array![[0.0, 0.0, 3.0], [4.0, 0.0, 0.0], [0.0, 5.0, 6.0],];
+
+        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(&sparse);
+
+        assert_eq!(csr.shape, (3, 3));
+        assert_eq!(csr.row_ptrs, vec![0u32, 1, 2, 4]);
+        assert_eq!(csr.col_indices, vec![2u32, 0, 1, 2]);
+        assert_eq!(csr.values, vec![3.0f32, 4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn test_build_csr_from_ndarray_empty() {
+        let sparse = array![[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0],];
+
+        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(&sparse);
+
+        assert_eq!(csr.shape, (3, 3));
+        assert_eq!(csr.row_ptrs, vec![0u32, 0, 0, 0]);
+        assert_eq!(csr.col_indices, vec![]);
+        assert_eq!(csr.values, vec![]);
+    }
 
     #[test]
     fn test_csr_row_access() {
