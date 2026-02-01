@@ -281,6 +281,21 @@ mod tests {
     }
 
     #[test]
+    fn test_build_csr_from_ndarray_full() {
+        let sparse = array![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0],];
+        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(&sparse);
+        assert_eq!(csr.shape, (3, 3));
+        assert_eq!(csr.row_ptrs, vec![0u32, 3, 6, 9]);
+        assert_eq!(csr.col_indices, vec![0u32, 1, 2, 0, 1, 2, 0, 1, 2]);
+        assert_eq!(
+            csr.values,
+            vec![
+                1.0f32, 2.0, 3.0, 4.0f32, 5.0f32, 6.0f32, 7.0f32, 8.0f32, 9.0f32
+            ]
+        );
+    }
+
+    #[test]
     fn test_csr_row_access() {
         // 1. a simple 2x3 CSR matrix
         // [1, 0, 2]
