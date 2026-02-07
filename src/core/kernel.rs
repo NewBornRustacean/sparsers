@@ -80,7 +80,7 @@ where
                     dot_product += d1_row[j] * d2_row[j];
                 }
 
-                out_row[idx] *= dot_product;
+                out_row[idx] = vals[idx] * dot_product;
             }
         },
     );
@@ -89,6 +89,7 @@ where
 #[cfg(test)]
 mod kernel_tests {
     use approx::assert_relative_eq;
+    use rayon::vec;
 
     use super::*;
     use crate::csr::CsrView;
@@ -170,7 +171,7 @@ mod kernel_tests {
 
         let d1 = vec![1.0f32, 2.0, 3.0, 4.0];
         let d2 = vec![5.0f32, 6.0, 7.0, 8.0, 9.0, 10.0];
-        let mut out = vals.clone();
+        let mut out = vec![0.0f32; vals.len()];
 
         sddmm(&s, &d1, &d2, &mut out, 2);
 
@@ -190,7 +191,7 @@ mod kernel_tests {
         let s = CsrView::new((3, 2), &row_ptr, &col_idx, &vals);
         let d1 = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let d2 = vec![7.0f32, 8.0, 9.0, 10.0];
-        let mut out = vals.clone();
+        let mut out = vec![0.0f32; vals.len()];
 
         sddmm(&s, &d1, &d2, &mut out, 2);
 
