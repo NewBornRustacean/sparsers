@@ -89,10 +89,9 @@ where
 #[cfg(test)]
 mod kernel_tests {
     use approx::assert_relative_eq;
-    use rayon::vec;
 
     use super::*;
-    use crate::csr::CsrView;
+    use crate::core::csr::CsrView;
 
     ////////////////////////////////
     /// Test cases for spmm_dense///
