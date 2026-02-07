@@ -7,6 +7,7 @@ edition = "2024"
 ndarray = {version = "0.17.2", features = ["rayon"]}
 num-traits = "0.2.19"
 rayon = "1.11.0"
+thiserror = "2.0.18"
 
 [dev-dependencies]
 approx = "0.5.1"

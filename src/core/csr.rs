@@ -1,4 +1,4 @@
-use ndarray::{Array2, Axis, Zip, parallel::prelude::*};
+use ndarray::{ArrayView2, Axis, Zip, parallel::prelude::*};
 use rayon::prelude::*;
 
 use crate::core::{
@@ -67,7 +67,7 @@ impl<I: Index, V: Scalar> CsrContainer<I, V> {
     /// Create a CSR matrix from an ndarray 2D array
     /// this function bypasses genrating an intermidiate COO matrix.
     /// without extra conversion logics, it directly constructs CSR from ndarray
-    pub fn from_ndarray(array: &Array2<V>) -> Self {
+    pub fn from_ndarray(array: ArrayView2<V>) -> Self {
         let (rows, cols) = array.dim();
         let zero = V::zero();
 
@@ -199,7 +199,7 @@ mod tests {
     fn test_build_csr_from_ndarray_pass() {
         let sparse = array![[0.0, 0.0, 3.0], [4.0, 0.0, 0.0], [0.0, 5.0, 6.0],];
 
-        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(&sparse);
+        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(sparse.view());
 
         assert_eq!(csr.shape, (3, 3));
         assert_eq!(csr.row_ptrs, vec![0u32, 1, 2, 4]);
@@ -211,7 +211,7 @@ mod tests {
     fn test_build_csr_from_ndarray_empty() {
         let sparse = array![[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0],];
 
-        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(&sparse);
+        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(sparse.view());
 
         assert_eq!(csr.shape, (3, 3));
         assert_eq!(csr.row_ptrs, vec![0u32, 0, 0, 0]);
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn test_build_csr_from_ndarray_full() {
         let sparse = array![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0],];
-        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(&sparse);
+        let csr: CsrContainer<u32, f32> = CsrContainer::from_ndarray(sparse.view());
         assert_eq!(csr.shape, (3, 3));
         assert_eq!(csr.row_ptrs, vec![0u32, 3, 6, 9]);
         assert_eq!(csr.col_indices, vec![0u32, 1, 2, 0, 1, 2, 0, 1, 2]);
