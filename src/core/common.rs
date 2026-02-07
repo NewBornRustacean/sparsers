@@ -34,6 +34,30 @@ impl Index for u64 {
     }
 }
 
+impl Index for i32 {
+    #[inline(always)]
+    fn to_usize(self) -> usize {
+        self as usize
+    }
+
+    #[inline(always)]
+    fn from_usize(value: usize) -> Self {
+        value as i32
+    }
+}
+
+impl Index for i64 {
+    #[inline(always)]
+    fn to_usize(self) -> usize {
+        self as usize
+    }
+
+    #[inline(always)]
+    fn from_usize(value: usize) -> Self {
+        value as i64
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum PartitionStrategy {
     Fixed(usize),
