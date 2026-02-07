@@ -1,5 +1,3 @@
-use rayon::prelude::*;
-
 use crate::core::common::{Index, PartitionStrategy, Scalar, SparseMatrix};
 
 /// Sparse Matrix-Matrix Multiplication (SpMM) where the second matrix is dense.
