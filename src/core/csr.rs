@@ -2,7 +2,7 @@ use ndarray::{Array2, Axis, Zip, parallel::prelude::*};
 use rayon::prelude::*;
 
 use crate::core::{
-    common::{Index, MutableSparseMatrix, Scalar, SparseMatrix},
+    common::{Index, Scalar, SparseMatrix},
     coo::CooContainer,
 };
 
@@ -115,6 +115,13 @@ impl<I: Index, V: Scalar> SparseMatrix<I, V> for CsrContainer<I, V> {
         let end = self.row_ptrs[idx + 1].to_usize();
         Some((&self.col_indices[start..end], &self.values[start..end]))
     }
+
+    fn row_offset(&self, idx: usize) -> usize {
+        if self.rows() <= idx {
+            panic!("Row index out of bounds");
+        }
+        self.row_ptrs[idx].to_usize()
+    }
 }
 
 pub struct CsrView<'a, I: Index, V: Scalar> {
@@ -176,77 +183,9 @@ impl<'a, I: Index, V: Scalar> SparseMatrix<I, V> for CsrView<'a, I, V> {
         let end = self.row_ptrs[idx + 1].to_usize();
         Some((&self.col_indices[start..end], &self.values[start..end]))
     }
-}
 
-pub struct CsrViewMut<'a, I: Index, V: Scalar> {
-    pub row_ptrs: &'a [I],
-    pub col_indices: &'a [I],
-    pub values: &'a mut [V],
-    pub shape: (usize, usize),
-}
-
-impl<'a, I: Index, V: Scalar> CsrViewMut<'a, I, V> {
-    #[inline(always)]
-    pub fn new(
-        shape: (usize, usize),
-        row_ptrs: &'a [I],
-        col_indices: &'a [I],
-        values: &'a mut [V],
-    ) -> Self {
-        Self {
-            shape,
-            row_ptrs,
-            col_indices,
-            values,
-        }
-    }
-
-    #[inline(always)]
-    pub fn shape(&self) -> (usize, usize) {
-        self.shape
-    }
-}
-
-impl<I: Index, V: Scalar> SparseMatrix<I, V> for CsrViewMut<'_, I, V> {
-    #[inline(always)]
-    fn shape(&self) -> (usize, usize) {
-        self.shape
-    }
-
-    #[inline(always)]
-    fn nnz(&self) -> usize {
-        self.values.len()
-    }
-
-    #[inline(always)]
-    fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
-        if idx >= self.shape.0 {
-            return None;
-        }
-        let start = self.row_ptrs[idx].to_usize();
-        let end = self.row_ptrs[idx + 1].to_usize();
-        Some((&self.col_indices[start..end], &self.values[start..end]))
-    }
-}
-
-impl<'a, I: Index, V: Scalar> MutableSparseMatrix<'a, I, V> for CsrViewMut<'a, I, V> {
-    fn split_into_rows_mut(self) -> Vec<(usize, &'a [I], &'a mut [V])> {
-        let mut rows = Vec::with_capacity(self.shape.0);
-        let mut remainings = self.values;
-
-        for i in 0..self.shape.0 {
-            let start = self.row_ptrs[i].to_usize();
-            let end = self.row_ptrs[i + 1].to_usize();
-            let len = end - start;
-
-            // cut from remaining_values and reassign
-            let (current_row, next_remaining) = remainings.split_at_mut(len);
-            remainings = next_remaining;
-
-            let col_indices = &self.col_indices[start..end];
-            rows.push((i, col_indices, current_row));
-        }
-        rows
+    fn row_offset(&self, idx: usize) -> usize {
+        self.row_ptrs[idx].to_usize()
     }
 }
 
