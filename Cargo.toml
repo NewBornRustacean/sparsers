@@ -2,6 +2,16 @@
 name = "sparsers"
 version = "0.1.0"
 edition = "2024"
+authors = ["NewBornRustacean <huiseomkim@gmail.com>"]
+description = "sparerse-rs: sparse matrix computation written in rust"
+license = "MIT"
+repository = "https://github.com/NewBornRustacean/sparsers"
+homepage = "https://github.com/NewBornRustacean/sparsers"
+documentation = "https://docs.rs/sparsers"
+readme = "README.md"
+keywords = ["sparse-matrix", "linear-algebra", "scientific-computing", "data-science"]
+categories = ["algorithms", "data-structures", "science"]
+rust-version = "1.92.0"
 
 [dependencies]
 ndarray = {version = "0.17.2", features = ["rayon"]}
