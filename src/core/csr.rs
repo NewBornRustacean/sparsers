@@ -215,8 +215,8 @@ mod tests {
 
         assert_eq!(csr.shape, (3, 3));
         assert_eq!(csr.row_ptrs, vec![0u32, 0, 0, 0]);
-        assert_eq!(csr.col_indices, vec![]);
-        assert_eq!(csr.values, vec![]);
+        assert_eq!(csr.col_indices, Vec::<u32>::new());
+        assert_eq!(csr.values, Vec::<f32>::new());
     }
 
     #[test]

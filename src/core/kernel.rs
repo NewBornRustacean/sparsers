@@ -1,4 +1,6 @@
-use crate::core::common::{Index, PartitionStrategy, Scalar, SparseMatrix};
+use rayon::iter::ParallelIterator;
+
+use crate::core::common::{Index, Scalar, SddmmPolicy, SparseMatrix, SpmmPolicy};
 
 /// Sparse Matrix-Matrix Multiplication (SpMM) where the second matrix is dense.
 ///
@@ -22,14 +24,14 @@ where
     assert_eq!(c.len(), a_rows * b_cols, "Output buffer size mismatch");
     assert!(b.len() >= a_cols * b_cols, "Dense matrix B is too small");
 
-    a.par_zip_out(c, PartitionStrategy::Fixed(b_cols)).for_each(
-        |(_i, a_col_indices, a_values, out_row)| {
-            out_row.fill(V::zero());
+    let policy: SpmmPolicy = SpmmPolicy { k: b_cols };
 
+    a.par_zip_out(c, policy).for_each(
+        |(_i, a_col_indices, a_values, out_row): (usize, &[I], &[V], &mut [V])| {
+            out_row.fill(V::zero());
             for (&col_idx, &a_val) in a_col_indices.iter().zip(a_values.iter()) {
                 let b_start = col_idx.to_usize() * b_cols;
                 let b_row = &b[b_start..b_start + b_cols];
-
                 for (c_val, &b_val) in out_row.iter_mut().zip(b_row.iter()) {
                     *c_val += a_val * b_val;
                 }
@@ -66,14 +68,18 @@ where
     assert!(d1.len() >= m * k, "Dense matrix D1 size mismatch");
     assert!(d2.len() >= k * s.shape().1, "Dense matrix D2 size mismatch");
 
-    s.par_zip_out(out, PartitionStrategy::RowNnzBalance).for_each(
-        |(i, col_indices, vals, out_row)| {
+    let policy = SddmmPolicy;
+
+    s.par_zip_out(out, policy).for_each(
+        |(i, col_indices, vals, out_row): (usize, &[I], &[V], &mut [V])| {
             let d1_row = &d1[i * k..(i + 1) * k];
+
             for (idx, &col_idx) in col_indices.iter().enumerate() {
                 let d2_row_start = col_idx.to_usize() * k;
                 let d2_row = &d2[d2_row_start..d2_row_start + k];
 
                 let mut dot_product = V::zero();
+
                 for j in 0..k {
                     dot_product += d1_row[j] * d2_row[j];
                 }
