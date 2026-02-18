@@ -1,6 +1,10 @@
 # sparsers
 sparse-rs; sparse matrix computation written in rust
 
+### version note
+- v0.1.1
+  - `ExecutionPolicy` added to `common.rs`.
+
 ### Why reinvent another wheel?
 1. As we know, there're great frameworks to deal with matrix multiplication including sparse matrices.
 As a Deep Learning Engineer who has lived and breathed PyTorch for years, I recognize it as a great framework. However, we’ve all been there: wrestling with torch-sparse or torch-scatter dependency hell during deployment, or hitting performance walls in CPU-bound sparse operations.
@@ -23,14 +27,14 @@ Perhaps one day, when the industry fully embraces Rust for ML(who knows? lol), t
 | Implementation | runtime |
 | :--- | :--- |
 | **torch** | 572.08 ms |
-| **sparsers** | 322.22 ms |
+| **sparsers** | 146.48 ms |
 
 
 <details>
   <summary> criterion screenshot </summary>
   <br>
 
-![alt text](<스크린샷 2026-02-07 21-03-11.png>)
+![alt text](image.png)
 
 </details>
 

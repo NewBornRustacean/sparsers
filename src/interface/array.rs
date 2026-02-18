@@ -1,8 +1,8 @@
-use ndarray::{Array2, ArrayView2, Axis};
+use ndarray::{Array2, ArrayView2};
 
 use crate::{
     core::{
-        common::{Index, PartitionStrategy, Scalar, SparseMatrix},
+        common::{Index, Scalar},
         csr::CsrContainer,
         kernel::{sddmm, spmm_dense},
     },
