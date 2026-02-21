@@ -2,7 +2,7 @@ use ndarray::{ArrayView2, Axis, Zip, parallel::prelude::*};
 use rayon::prelude::*;
 
 use crate::core::{
-    common::{Index, Scalar, SparseMatrix},
+    common::{ExecutionPolicy, Index, RowChunkProducer, Scalar, SparseMatrix},
     coo::CooContainer,
 };
 
@@ -93,6 +93,10 @@ impl<I: Index, V: Scalar> CsrContainer<I, V> {
             values,
         }
     }
+
+    pub fn view(&self) -> CsrView<I, V> {
+        CsrView::new(self.shape, &self.row_ptrs, &self.col_indices, &self.values)
+    }
 }
 
 impl<I: Index, V: Scalar> SparseMatrix<I, V> for CsrContainer<I, V> {
@@ -107,7 +111,7 @@ impl<I: Index, V: Scalar> SparseMatrix<I, V> for CsrContainer<I, V> {
     }
 
     #[inline(always)]
-    fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
+    fn outer_slice(&self, idx: usize) -> Option<(&[I], &[V])> {
         if idx >= self.shape.0 {
             return None;
         }
@@ -117,7 +121,7 @@ impl<I: Index, V: Scalar> SparseMatrix<I, V> for CsrContainer<I, V> {
     }
 
     fn row_offset(&self, idx: usize) -> usize {
-        if self.rows() <= idx {
+        if self.outer_dims() <= idx {
             panic!("Row index out of bounds");
         }
         self.row_ptrs[idx].to_usize()
@@ -161,6 +165,17 @@ impl<'a, I: Index, V: Scalar> CsrView<'a, I, V> {
         let end = self.row_ptrs[idx + 1].to_usize();
         Some((&self.col_indices[start..end], &self.values[start..end]))
     }
+
+    pub fn par_zip_out<P: ExecutionPolicy>(
+        &'a self,
+        out: &'a mut [V],
+        policy: P,
+    ) -> RowChunkProducer<'a, Self, I, V, P>
+    where
+        Self: Sized + Sync,
+    {
+        RowChunkProducer::new(self, out, 0, self.outer_dims(), policy)
+    }
 }
 
 impl<'a, I: Index, V: Scalar> SparseMatrix<I, V> for CsrView<'a, I, V> {
@@ -175,7 +190,7 @@ impl<'a, I: Index, V: Scalar> SparseMatrix<I, V> for CsrView<'a, I, V> {
     }
 
     #[inline(always)]
-    fn row(&self, idx: usize) -> Option<(&[I], &[V])> {
+    fn outer_slice(&self, idx: usize) -> Option<(&[I], &[V])> {
         if idx >= self.shape.0 {
             return None;
         }
@@ -251,14 +266,14 @@ mod tests {
         };
 
         // 2. verify 1st row: [1, 0, 2] -> 0th, 2nd column have values
-        let Some((cols, vals)) = csr.row(0) else {
+        let Some((cols, vals)) = csr.outer_slice(0) else {
             panic!("Row not found")
         };
         assert_eq!(cols, &[0, 2]);
         assert_eq!(vals, &[1.0, 2.0]);
 
         // 3. verify second row: [0, 0, 3] -> only 2nd column has a value
-        let Some((cols, vals)) = csr.row(1) else {
+        let Some((cols, vals)) = csr.outer_slice(1) else {
             panic!("Row not found")
         };
         assert_eq!(cols, &[2]);
@@ -276,7 +291,7 @@ mod tests {
             shape: (2, 2),
         };
 
-        let Some((cols, vals)) = csr.row(0) else {
+        let Some((cols, vals)) = csr.outer_slice(0) else {
             panic!("Row not found")
         };
         assert!(cols.is_empty());
@@ -343,10 +358,10 @@ mod tests {
         };
 
         // confirm that returns None for out-of-bounds indices
-        assert!(csr.row(1).is_none());
-        assert!(csr.row(100).is_none());
+        assert!(csr.outer_slice(1).is_none());
+        assert!(csr.outer_slice(100).is_none());
 
         // valid index returns Some
-        assert!(csr.row(0).is_some());
+        assert!(csr.outer_slice(0).is_some());
     }
 }

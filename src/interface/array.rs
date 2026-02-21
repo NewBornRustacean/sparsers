@@ -4,7 +4,7 @@ use crate::{
     core::{
         common::{Index, Scalar},
         csr::CsrContainer,
-        kernel::{sddmm, spmm_dense},
+        kernel::{sddmm_csr, spmm_csr},
     },
     interface::error::{SparsersError, SparsersResult},
 };
@@ -38,7 +38,7 @@ pub fn spmm_ndarray<I: Index, V: Scalar>(
 
     let mut output = Array2::<V>::zeros((sparse_row, dense_col));
     let output_slice = output.as_slice_mut().expect("Output matrix must be contiguous");
-    spmm_dense(&csr_matrix, dense_slice, output_slice, dense_col);
+    spmm_csr(csr_matrix.view(), dense_slice, output_slice, dense_col);
 
     Ok(output)
 }
@@ -92,8 +92,8 @@ pub fn sddmm_ndarray<I: Index, V: Scalar>(
     let mut output = Array2::<V>::zeros((sparse_row, sparse_col));
     let output_slice = output.as_slice_mut().expect("Output matrix must be contiguous");
 
-    sddmm(
-        &csr_matrix,
+    sddmm_csr(
+        csr_matrix.view(),
         dense1_slice,
         dense2_slice,
         output_slice,

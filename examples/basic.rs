@@ -2,7 +2,7 @@ use ndarray::{Array2, array};
 use sparsers::core::{
     common::SparseMatrix,
     csr::CsrContainer,
-    kernel::{sddmm, spmm_dense},
+    kernel::{sddmm_csr, spmm_csr},
 };
 
 fn main() {
@@ -39,7 +39,12 @@ fn main() {
 
     let mut result = vec![0.0f32; 10 * 2]; // Resul buffer for the dense matrix (10x2)
 
-    spmm_dense(&sparse_csr, &dense_slice, &mut result, dense_matrix.ncols());
+    spmm_csr(
+        sparse_csr.view(),
+        &dense_slice,
+        &mut result,
+        dense_matrix.ncols(),
+    );
     let res_arr = Array2::from_shape_vec((10, 2), result)
         .expect("Error: Shape mismatch during array conversion");
     println!("Result of SpMM:\n{:#?}", res_arr);
@@ -72,6 +77,12 @@ fn main() {
 
     let mut result = vec![0.0f32; sparse_csr.nnz()]; // Result buffer for the SDDMM
 
-    sddmm(&sparse_csr, dense_d1_slice, dense_d2_slice, &mut result, 1);
+    sddmm_csr(
+        sparse_csr.view(),
+        dense_d1_slice,
+        dense_d2_slice,
+        &mut result,
+        1,
+    );
     println!("Result of SDDMM:\n{:#?}", result);
 }

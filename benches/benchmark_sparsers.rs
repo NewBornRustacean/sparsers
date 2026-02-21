@@ -4,7 +4,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use ndarray::{Array1, Array2, ArrayView2};
 use ndarray_npy::NpzReader;
 use rayon::prelude::*;
-use sparsers::core::{common::SparseMatrix, csr::CsrContainer, kernel::spmm_dense};
+use sparsers::core::{common::SparseMatrix, csr::CsrContainer, kernel::spmm_csr};
 
 fn setup_roadnet() -> (CsrContainer<i32, f64>, Array2<f64>) {
     let npy_path = "data/roadNet-CA.csr.npz".to_string();
@@ -27,24 +27,66 @@ fn setup_roadnet() -> (CsrContainer<i32, f64>, Array2<f64>) {
     (csr, b_matrix)
 }
 
-fn bench_spmm_kernel(c: &mut Criterion) {
+fn spmm_ndarray_parallel(
+    row_ptrs: &[i32],
+    col_indices: &[i32],
+    values: &[f64],
+    b: &Array2<f64>,
+    c: &mut [f64],
+) {
+    let b_cols = b.ncols();
+
+    c.par_chunks_mut(b_cols).enumerate().for_each(|(i, row_out)| {
+        let start = row_ptrs[i] as usize;
+        let end = row_ptrs[i + 1] as usize;
+
+        for val in row_out.iter_mut() {
+            *val = 0.0;
+        }
+
+        for idx in start..end {
+            let col = col_indices[idx] as usize;
+            let val = values[idx];
+
+            let b_row = b.row(col);
+            for j in 0..b_cols {
+                row_out[j] += val * b_row[j];
+            }
+        }
+    });
+}
+
+fn bench_spmm_comparison(c: &mut Criterion) {
     let (csr, b_matrix) = setup_roadnet();
     let b_view = b_matrix.view();
     let a_rows = csr.shape().0;
     let b_cols = b_matrix.shape()[1];
     let mut c_output = vec![0.0f64; a_rows * b_cols];
 
-    let mut group: criterion::BenchmarkGroup<'_, criterion::measurement::WallTime> =
-        c.benchmark_group("Kernel_Performance");
+    let mut group = c.benchmark_group("SpMM_Comparison");
     group.sample_size(10);
 
-    group.bench_function("roadNet-CA-spmm", |b| {
+    // 1. sparsers (Our Optimized Kernel)
+    group.bench_function("sparsers-optimized", |b| {
         b.iter(|| {
-            spmm_dense(
-                &csr,
+            spmm_csr(
+                csr.view(),
                 b_view.as_slice().unwrap(),
                 &mut c_output,
-                b_view.shape()[1],
+                b_cols,
+            )
+        });
+    });
+
+    // 2. ndarray parallel loop (Baseline)
+    group.bench_function("ndarray-parallel-loop", |b| {
+        b.iter(|| {
+            spmm_ndarray_parallel(
+                &csr.row_ptrs,
+                &csr.col_indices,
+                &csr.values,
+                &b_matrix,
+                &mut c_output,
             )
         });
     });
@@ -52,5 +94,5 @@ fn bench_spmm_kernel(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_spmm_kernel);
+criterion_group!(benches, bench_spmm_comparison);
 criterion_main!(benches);

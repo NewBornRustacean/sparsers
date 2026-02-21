@@ -1,24 +1,11 @@
 use rayon::iter::ParallelIterator;
 
-use crate::core::common::{Index, Scalar, SddmmPolicy, SparseMatrix, SpmmPolicy};
+use crate::core::{
+    common::{Index, Scalar, SddmmPolicy, SparseMatrix, SpmmPolicy},
+    csr::CsrView,
+};
 
-/// Sparse Matrix-Matrix Multiplication (SpMM) where the second matrix is dense.
-///
-/// # Arguments
-/// - `a`: Sparse matrix in CSR format.
-/// - `b`: Dense matrix stored in row-major order.
-/// - `c`: Output buffer for the result matrix, also in row-major order.
-/// - `b_cols`: Number of columns in the dense matrix `b`.
-///
-/// # Panics
-/// Panics if the dimensions of the matrices do not align for multiplication or if the output buffer
-/// size does not match the expected size.
-pub fn spmm_dense<M, I, V>(a: &M, b: &[V], c: &mut [V], b_cols: usize)
-where
-    M: SparseMatrix<I, V> + Sync,
-    I: Index,
-    V: Scalar,
-{
+pub fn spmm_csr<I: Index, V: Scalar>(a: CsrView<I, V>, b: &[V], c: &mut [V], b_cols: usize) {
     let (a_rows, a_cols) = a.shape();
 
     assert_eq!(c.len(), a_rows * b_cols, "Output buffer size mismatch");
@@ -26,38 +13,20 @@ where
 
     let policy: SpmmPolicy = SpmmPolicy { k: b_cols };
 
-    a.par_zip_out(c, policy).for_each(
-        |(_i, a_col_indices, a_values, out_row): (usize, &[I], &[V], &mut [V])| {
-            out_row.fill(V::zero());
-            for (&col_idx, &a_val) in a_col_indices.iter().zip(a_values.iter()) {
-                let b_start = col_idx.to_usize() * b_cols;
-                let b_row = &b[b_start..b_start + b_cols];
-                for (c_val, &b_val) in out_row.iter_mut().zip(b_row.iter()) {
-                    *c_val += a_val * b_val;
-                }
+    a.par_zip_out(c, policy).for_each(|(_i, a_col_indices, a_values, out_row)| {
+        out_row.fill(V::zero());
+        for (&col_idx, &a_val) in a_col_indices.iter().zip(a_values.iter()) {
+            let b_start = col_idx.to_usize() * b_cols;
+            let b_row = &b[b_start..b_start + b_cols];
+            for (c_val, &b_val) in out_row.iter_mut().zip(b_row.iter()) {
+                *c_val += a_val * b_val;
             }
-        },
-    );
+        }
+    });
 }
 
-/// Sampled Dense-Dense Matrix Multiplication (SDDMM).
-///
-/// Computes: S_ij = S_ij * (D1_i * D2_j^T)
-/// Where (i, j) are the indices of non-zero elements in the sparse matrix S.
-///
-/// # Arguments
-/// * `s` - View of the sparse matrix in CSR format.
-/// * `d1` - First dense matrix (M x K), stored in row-major order.
-/// * `d2` - Second dense matrix (N x K), where each row j represents the vector to dot with D1_i.
-///          Note: D2 is effectively pre-transposed for optimal cache locality.
-/// * `out` - Output buffer to store the updated non-zero values of the sparse matrix S.
-/// * `k` - The inner dimension (latent factor size).
-///
-/// # Panics
-/// Panics if the dimensions of `d1` or `d2` do not match the shape of `s` and `k`.
-pub fn sddmm<'a, M, I, V>(s: &M, d1: &[V], d2: &[V], out: &mut [V], k: usize)
+pub fn sddmm_csr<I: Index, V: Scalar>(s: CsrView<I, V>, d1: &[V], d2: &[V], out: &mut [V], k: usize)
 where
-    M: SparseMatrix<I, V> + Sync,
     I: Index,
     V: Scalar,
 {
@@ -114,7 +83,7 @@ mod kernel_tests {
         let b = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let mut c = vec![0.0f32; 2 * 2];
 
-        spmm_dense(&a, &b, &mut c, 2);
+        spmm_csr(a, &b, &mut c, 2);
 
         assert_eq!(c, vec![11.0, 14.0, 15.0, 18.0]);
     }
@@ -133,7 +102,7 @@ mod kernel_tests {
         let b = vec![10.0f32, 20.0];
         let mut c = vec![0.0f32; 3 * 1];
 
-        spmm_dense(&a, &b, &mut c, 1);
+        spmm_csr(a, &b, &mut c, 1);
 
         assert_eq!(c, vec![50.0, 0.0, 110.0]);
     }
@@ -150,7 +119,7 @@ mod kernel_tests {
         let mut c = vec![0.0f32; 1];
 
         // confirm that only the 1st element of each row in B is read
-        spmm_dense(&a, &b, &mut c, 1);
+        spmm_csr(a, &b, &mut c, 1);
 
         assert_eq!(c[0], 20.0);
     }
@@ -176,7 +145,7 @@ mod kernel_tests {
         let d2 = vec![5.0f32, 6.0, 7.0, 8.0, 9.0, 10.0];
         let mut out = vec![0.0f32; vals.len()];
 
-        sddmm(&s, &d1, &d2, &mut out, 2);
+        sddmm_csr(s, &d1, &d2, &mut out, 2);
 
         assert_eq!(out[0], 17.0); // 1 * (1*5 + 2*6) = 17
         assert_eq!(out[1], 58.0); // 2 * (1*9 + 2*10) = 58
@@ -196,7 +165,7 @@ mod kernel_tests {
         let d2 = vec![7.0f32, 8.0, 9.0, 10.0];
         let mut out = vec![0.0f32; vals.len()];
 
-        sddmm(&s, &d1, &d2, &mut out, 2);
+        sddmm_csr(s, &d1, &d2, &mut out, 2);
 
         assert_relative_eq!(out[0], 23.0); // 1 * (1*7 + 2*8) = 23
         assert_relative_eq!(out[1], 58.0); // 2 * (1*9 + 2*10) = 58

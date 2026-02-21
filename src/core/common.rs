@@ -57,7 +57,6 @@ impl Index for i64 {
         value as i64
     }
 }
-
 pub trait ExecutionPolicy: Copy + Send + Sync {
     fn split_info<M: SparseMatrix<I, V>, I: Index, V: Scalar>(
         &self,
@@ -129,30 +128,21 @@ impl ExecutionPolicy for SddmmPolicy {
     }
 }
 
+/// SparseMatrix trait defines the interface for sparse matrix formats (CSR, CSC etc.)
+/// Outer dimension(Major Axis): axis that compression is applied on (rows for CSR, cols for CSC)
+/// Inner dimension(Minor Axis): axis that is stored as indices and values (cols for CSR, rows for CSC)
 pub trait SparseMatrix<I: Index, V: Scalar> {
     fn shape(&self) -> (usize, usize);
     fn nnz(&self) -> usize;
 
-    // return a specific row as a slice
-    fn row(&self, idx: usize) -> Option<(&[I], &[V])>;
-    fn rows(&self) -> usize {
+    // return a specific row(csr) or col(csc) as a slice
+    fn outer_slice(&self, idx: usize) -> Option<(&[I], &[V])>;
+    fn outer_dims(&self) -> usize {
         self.shape().0
     }
 
     // return the starting offset of a specific row
     fn row_offset(&self, idx: usize) -> usize;
-
-    // parallel row iterator with output buffer
-    fn par_zip_out<'a, P: ExecutionPolicy>(
-        &'a self,
-        out: &'a mut [V],
-        policy: P,
-    ) -> RowChunkProducer<'a, Self, I, V, P>
-    where
-        Self: Sized + Sync,
-    {
-        RowChunkProducer::new(self, out, 0, self.rows(), policy)
-    }
 }
 
 pub struct RowChunkProducer<'a, M, I, V, P>
@@ -269,7 +259,7 @@ where
         }
 
         let curr_row = self.start_row;
-        let (cols, vals) = self.matrix.row(curr_row)?;
+        let (cols, vals) = self.matrix.outer_slice(curr_row)?;
         let chunk_size = self.policy.chunk_size(cols);
 
         let full_out = std::mem::take(&mut self.out);
@@ -299,7 +289,7 @@ where
         }
 
         let last_idx = self.start_row + self.num_rows - 1;
-        let (cols, vals) = self.matrix.row(last_idx)?;
+        let (cols, vals) = self.matrix.outer_slice(last_idx)?;
         let chunk_size = self.policy.chunk_size(cols);
 
         let full_out = std::mem::take(&mut self.out);
